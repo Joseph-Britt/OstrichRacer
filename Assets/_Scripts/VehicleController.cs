@@ -1,7 +1,7 @@
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody))]
-public class VehicleController : MonoBehaviour
+public class VehicleController : MonoBehaviour, ICheckpointUser
 {
     [Header("Movement Settings")]
     public float moveForce = 10f;
@@ -15,17 +15,38 @@ public class VehicleController : MonoBehaviour
     public float groundRadius = 0.2f;
     public LayerMask groundLayer;
 
+    [Header("Respawn")]
+    [SerializeField] private Checkpoint start;
+    [SerializeField] private float respawnDuration = 3f;
+
     private Rigidbody rb;
     private bool isGrounded;
+
+    // Respawn
+    private Checkpoint checkpoint;
+    private float respawnTimer;
 
     void Start()
     {
         rb = GetComponent<Rigidbody>();
         rb.freezeRotation = true; // We'll handle rotation manually
+        
+        // Checkpoints/start
+        SetCheckpoint(start);
+        Respawn();
     }
 
     void Update()
     {
+        // Respawn (manually triggered for testing)
+        if (respawnTimer > 0) {
+            respawnTimer -= Time.deltaTime;
+            return;
+        }
+        if (Input.GetKeyDown(KeyCode.R)) {
+            Respawn();
+        }
+
         // Ground check
         isGrounded = Physics.CheckSphere(groundCheck.position, groundRadius, groundLayer);
 
@@ -38,6 +59,11 @@ public class VehicleController : MonoBehaviour
 
     void FixedUpdate()
     {
+        // Pause physics input while respawning
+        if (respawnTimer > 0) {
+            return;
+        }
+
         // we'll probably change to an input system? will hard code for now
         float h = Input.GetAxis("Horizontal");
         float v = Input.GetAxis("Vertical");
@@ -67,5 +93,45 @@ public class VehicleController : MonoBehaviour
             Quaternion targetRotation = Quaternion.LookRotation(flatVel, Vector3.up);
             rb.MoveRotation(Quaternion.Slerp(rb.rotation, targetRotation, rotationSpeed * Time.fixedDeltaTime));
         }
+    }
+
+    public void SetCheckpoint(Checkpoint checkpoint) {
+        if (this.checkpoint == checkpoint) {
+            return;
+        }
+
+        if (this.checkpoint != null) {
+            this.checkpoint.Lock();
+            this.checkpoint.Disable();
+        }
+
+        this.checkpoint = checkpoint;
+        this.checkpoint.Unlock();
+    }
+
+    public Checkpoint GetCheckpoint() {
+        return checkpoint;
+    }
+
+    public void Respawn() {
+        if (checkpoint != null) {
+            respawnTimer = respawnDuration;
+
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            //rb.AddForce(-rb.GetAccumulatedForce());
+
+            Transform spawnPoint = checkpoint.GetSpawnPointTransform();
+            transform.position = spawnPoint.position + .2f * Vector3.up;
+            transform.rotation = spawnPoint.rotation;
+        }
+    }
+
+    public void ApplySpeedMultiplier(float multiplier) {
+        maxSpeed *= multiplier;
+    }
+
+    public void ApplyMoveForceMultiplier(float multiplier) {
+        moveForce *= multiplier;
     }
 }
